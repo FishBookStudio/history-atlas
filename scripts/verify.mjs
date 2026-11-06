@@ -32,20 +32,29 @@ assert.equal(get('reviewId'),'party1');
 assert.equal(el('knowledgePopover').hidden,false);
 const card=el('detail').innerHTML;
 assert(card.includes('中共一大')&&card.includes('会议')&&card.includes('1921'),'card shows title/kind/date');
-assert(card.includes('data-reveal="summary"')&&card.includes('data-reveal="point:0"')&&card.includes('data-reveal="edge:e16"'),'covers rendered');
-assert(card.includes('揭晓：中共一大的第 1 条核心知识'),'cover has accessible name');
-assert(!card.includes('马克思主义在中国的传播')&&!card.includes('上海共产党早期组织'),'answers hidden before reveal');
+assert(card.includes('class="cloze"')&&card.includes('data-reveal="edge:e16l:0"'),'inline cloze in points and relations');
+assert(card.includes('揭晓：中共一大第 1 条核心知识中的第 1 处挖空'),'cloze has accessible name');
+assert(card.includes('揭晓：中共一大与毛泽东的'),'relation blank has accessible name');
+assert(card.includes('毛泽东'),'relation target name stays visible as a hint');
+assert(card.includes('武汉')===false,'party1 point 0 has no cloze leak');
+assert(!card.includes('嘉兴'),'blanked words are absent from the DOM before reveal');
+assert(card.includes('举行，最后一天转移到'),'context text stays visible');
 assert(!card.includes('出席'),'relation answers hidden before reveal');
 assert(el('relationLines').innerHTML.includes('？'),'relation text masked on map');
 assert(!el('relationLines').innerHTML.includes('data-edge="e16" tabindex="0" role="button" aria-label="毛泽东出席中共一大"'),'edge aria-label must not leak answer');
-// independent reveal
-get("toggleReveal('point:0')");
-assert(get("revealed.has('point:0')")===true);
-assert(get("revealed.has('point:1')")===false,'other covers stay hidden');
-assert(el('detail').innerHTML.includes('data-reveal="point:1"'));
+// independent reveal: one clause only
+get("toggleReveal('p0:1')");
+assert(get("revealed.has('p0:1')")===true);
+assert(get("revealed.has('p0:0')")===false,'other blanks stay hidden');
+assert.equal(get("revealed.size"),1);
+// reveal-all covers every blank of the card
+get('revealAll()');
+assert(get("revealed.has('p0:0')")&&get("revealed.has('p0:1')"));
+assert(get('revealed.size')>5);
+get('recoverAll()');assert.equal(get('revealed.size'),0);
 // relation reveal syncs to map
 assert(!el('relationLines').innerHTML.includes('出席'));
-get("toggleReveal('edge:e16')");
+get("toggleReveal('edge:e16l:0')");
 assert(el('relationLines').innerHTML.includes('出席'),'map shows relation after reveal');
 // recover
 get('recoverAll()');
@@ -72,7 +81,7 @@ assert.equal(el('relationLines').innerHTML,'');
 get("byId.test={id:'test',title:'测试节点',kind:'事件',year:1920,date:'1920 年',pages:[35],summary:'',points:[],exam:''};setMode('review');selectReview('test')");
 assert.equal(get('reviewId'),'test');
 assert(el('detail').innerHTML.includes('尚未收录直接关系'));
-assert(el('detail').innerHTML.includes('暂无需要遮盖的复习内容'));
+assert(el('detail').innerHTML.includes('本项暂无需遮盖的复习内容'));
 get("selectNode('may4')");
 assert.equal(get('reviewId'),'may4');
 assert(get("revealed.size")===0);

@@ -104,7 +104,7 @@ function highlight(id){
 }
 // ---------- Review mode ----------
 const edgeKey=e=>'edge:'+e.id;
-const edgeRevealed=e=>revealed.has(edgeKey(e));
+const edgeRevealed=e=>['','l'].some(x=>[...revealed].some(k=>k.startsWith(edgeKey(e)+x+':')));
 const linkText=e=>esc(e.label);
 function setMode(next){
  mode=next;const keep=reviewId;
@@ -126,25 +126,43 @@ function openReviewCard(id){
 }
 function questionFor(n,e){const o=byId[other(e,n.id)];return `${n.title} 与「${o.title}」是什么关系？`}
 function coverHTML(n,key,question,tip){
- return `<button class="cover" data-reveal="${key}" aria-expanded="false" aria-label="揭晓：${esc(question)}"><span class="cover-q">${esc(question)}</span><span class="cover-tip">${tip||'点击揭晓'}</span></button>`;
+ return `<button class="cover" data-reveal="${key}" data-label="揭晓：${esc(question)}" aria-expanded="false" aria-label="揭晓：${esc(question)}"><span class="cover-q">${esc(question)}</span><span class="cover-tip">${tip||'点击揭晓'}</span></button>`;
 }
-function relationAnswerHTML(n,e){
- const o=byId[other(e,n.id)],ok=e.source===n.id;
- return `<span class="answer-word">${esc(o.title)}${ok?'：':' ← '}<b>${esc(e.label)}</b></span><button class="relation-link" data-node="${o.id}" data-switch="1"><span>${esc(o.title)} ↗</span><small>打开复习卡片</small></button>`;
+let cardAnswers={},cardCloze={};
+function clozeSentence(text,terms,keyBase,ctxLabel){
+ if(!terms||!terms.length)return `<span class="cloze-text">${esc(text)}</span>`;
+ const parts=[];let idx=0,j=0;
+ for(const term of terms){const at=text.indexOf(term,idx);if(at<0)continue;
+  if(at>idx)parts.push(`<span class="cloze-text">${esc(text.slice(idx,at))}</span>`);
+  const key=`${keyBase}:${j}`;cardCloze[key]=term;
+  const label=`揭晓：${ctxLabel}第 ${j+1} 处挖空`;
+  parts.push(`<button class="cloze" data-reveal="${key}" data-label="${esc(label)}" aria-expanded="false" aria-label="${esc(label)}" style="--w:${Math.min(term.length,10)}"><span class="cloze-term"></span></button>`);
+  idx=at+term.length;j++}
+ if(idx<text.length)parts.push(`<span class="cloze-text">${esc(text.slice(idx))}</span>`);
+ return parts.join('');
 }
-let cardAnswers={};
 function renderReviewDetail(){
- const n=byId[reviewId],es=links(n.id);cardAnswers={};
+ const n=byId[reviewId],es=links(n.id);cardAnswers={};cardCloze={};
  const body=[];
- if(n.summary){cardAnswers.summary=`<p class="summary">${esc(n.summary)}</p>`;body.push(`<div class="review-summary">${coverHTML(n,'summary',`${n.title}的知识概览是什么？`)}</div>`)}
- if(n.points.length){n.points.forEach((p,i)=>{cardAnswers['point:'+i]=`<span class="point-text">${esc(p)}</span>`});
-  body.push(`<div class="detail-rule"></div><div class="section-label">核心知识 / KEY POINTS</div><ul class="points review-points">${n.points.map((p,i)=>`<li class="reveal-row">${coverHTML(n,'point:'+i,`${n.title}的第 ${i+1} 条核心知识`)}</li>`).join('')}</ul>`)}
+ if(n.summary){
+  const sTerms=n.summaryCloze||[];
+  if(sTerms.length)body.push(`<div class="review-summary">${clozeSentence(n.summary,sTerms,'s',`${n.title}的知识概览中的`)}</div>`);
+  else body.push(`<div class="review-summary"><p class="summary">${esc(n.summary)}</p></div>`);
+ }
+ if(n.points.length)body.push(`<div class="detail-rule"></div><div class="section-label">核心知识 / KEY POINTS</div><ul class="points review-points">${n.points.map((p,i)=>`<li class="cloze-line">${clozeSentence(p,(n.cloze&&n.cloze[i])||[],'p'+i,`${n.title}第 ${i+1} 条核心知识中的`)}</li>`).join('')}</ul>`);
  if(n.exam){cardAnswers.exam=`<div class="exam">${esc(n.exam)}</div>`;body.push(`<div class="detail-rule"></div><div class="section-label">易错提醒 / WATCH OUT</div><div class="review-exam">${coverHTML(n,'exam',`${n.title}的易错提醒`)}</div>`)}
- es.forEach(e=>{cardAnswers['edge:'+e.id]=relationAnswerHTML(n,e)});
- body.push(`<div class="detail-rule"></div><div class="section-label">关联知识 / RELATIONS</div>${es.length?`<ul class="points review-relations">${es.map(e=>`<li class="reveal-row">${coverHTML(n,'edge:'+e.id,questionFor(n,e))}</li>`).join('')}</ul>`:'<p class="source">本样板尚未收录直接关系。</p>'}`);
+ const relItems=[];
+ es.forEach(e=>{const o=byId[other(e,n.id)],ok=e.source===n.id;
+  relItems.push(`<li class="cloze-line relation-line"><span class="cloze-text rel-name">${ok?'→ ':'← '}${esc(o.title)}</span><span class="cloze-text">：</span>${clozeSentence(e.label,[e.label],edgeKey(e)+'l',`${n.title}与${o.title}的`)}<button class="relation-jump" data-node="${o.id}" aria-label="打开${esc(o.title)}的复习卡片">↗</button></li>`) });
+ body.push(`<div class="detail-rule"></div><div class="section-label">关联知识 / RELATIONS</div>${es.length?`<ul class="points review-relations">${relItems.join('')}</ul>`:'<p class="source">本样板尚未收录直接关系。</p>'}`);
  body.push(`<div class="source">来源：《史纲知识点》<br>${sourceButtons(n.pages)}<br>原书页码：${n.pages.map(p=>p+292).join('、')} · 摘要为整理表述</div>`);
- $('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>复习卡片</small></div><h2 id="cardTitle">${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div><div class="review-meta"><span>${esc(n.kind)}</span><span>${n.year<1919.34?'旧民主主义革命':'新民主主义革命'}</span><span>${es.length} 条直接关联</span>${Object.keys(cardAnswers).length?'':'<span>本项暂无需要遮盖的复习内容</span>'}</div><div class="review-toolbar"><button id="revealAll" type="button">全部揭晓</button><button id="recoverAll" type="button">重新遮盖</button></div>${body.join('')}`;
+ $('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>复习卡片</small></div><h2 id="cardTitle">${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div><div class="review-meta"><span>${esc(n.kind)}</span><span>${n.year<1919.34?'旧民主主义革命':'新民主主义革命'}</span><span>${es.length} 条直接关联</span>${allKeys().length?'':'<span>本项暂无需遮盖的复习内容</span>'}</div><div class="review-toolbar"><button id="revealAll" type="button">全部揭晓</button><button id="recoverAll" type="button">重新遮盖</button><span class="review-progress" id="reviewProgress"></span></div>${body.join('')}`;
  syncCardStates();
+}
+function allKeys(){
+ const n=byId[reviewId];if(!n)return [];
+ const keys=[...Object.keys(cardCloze),...Object.keys(cardAnswers)];
+ return keys;
 }
 function syncCardStates(){
  const detail=$('detail');if(!detail)return;
@@ -154,12 +172,19 @@ function syncCardStates(){
   if(on){if(!next||!next.classList.contains('reveal-answer')){const ans=document.createElement('div');ans.className='reveal-answer';ans.innerHTML=cardAnswers[key]||'';btn.after(ans)}}
   else if(next&&next.classList.contains('reveal-answer'))next.remove();
  }
+ for(const btn of detail.querySelectorAll('.cloze')){
+  const key=btn.dataset.reveal,on=revealed.has(key),term=cardCloze[key]||'';
+  btn.classList.toggle('is-revealed',on);btn.setAttribute('aria-expanded',String(on));
+  btn.querySelector('.cloze-term').textContent=on?term:'';
+  btn.setAttribute('aria-label',on?('已揭晓：'+term+'，点击重新遮盖'):(btn.dataset.label||btn.getAttribute('aria-label')));
+ }
+ const total=allKeys().length,shown=allKeys().filter(k=>revealed.has(k)).length;
+ const bar=$('reviewProgress');if(bar)bar.textContent=total?`已揭晓 ${shown} / ${total} 处`:'';
 }
 function toggleReveal(key){if(!reviewId)return;if(revealed.has(key))revealed.delete(key);else revealed.add(key);syncCardStates();highlightReview()}
 function revealAll(){
- if(!reviewId||!isReview())return;const n=byId[reviewId];
- revealed=new Set([...n.points.map((_,i)=>`point:${i}`),...links(n.id).map(e=>`edge:${e.id}`)]);
- if(n.summary)revealed.add('summary');if(n.exam)revealed.add('exam');
+ if(!reviewId||!isReview())return;
+ revealed=new Set(allKeys());
  syncCardStates();highlightReview();
 }
 function recoverAll(){if(!reviewId)return;revealed.clear();syncCardStates();highlightReview()}
@@ -208,7 +233,10 @@ function reviewPreview(focus){
 }
 function toggleReviewEdge(edgeId){
  const e=D.edges.find(x=>x.id===edgeId);if(!e||!reviewId)return;
- reviewEdge=e.id;toggleReveal(edgeKey(e));
+ reviewEdge=e.id;
+ // 地图上点击关系线 -> 揭晓/遮盖这条关系文字（与卡片里的挖空同步）
+ const labelKey=Object.keys(cardCloze).find(k=>k.startsWith(edgeKey(e)+'l:'))||Object.keys(cardCloze).find(k=>k.startsWith(edgeKey(e)+':'));
+ toggleReveal(labelKey||edgeKey(e));
 }
 function closeReviewCard(){
  const back=document.querySelector('#eventPoints [data-node="'+reviewId+'"]')||document.querySelector('#mainline [data-node="'+reviewId+'"]');
@@ -254,6 +282,10 @@ $('knowledgePopover').addEventListener('click',ev=>{
  if(ev.target.closest('#recoverAll')){ev.stopPropagation();recoverAll();return}
  const cover=ev.target.closest('.cover');
  if(cover){ev.stopPropagation();toggleReveal(cover.dataset.reveal);return}
+ const cloze=ev.target.closest('.cloze');
+ if(cloze){ev.stopPropagation();toggleReveal(cloze.dataset.reveal);return}
+ const jump=ev.target.closest('.relation-jump');
+ if(jump){ev.stopPropagation();const id=jump.dataset.node;selectReview(id);const el=document.querySelector('#eventPoints [data-node="'+id+'"]');if(el)el.focus();return}
  const node=ev.target.closest('[data-node]');if(node){ev.stopPropagation();const id=node.dataset.node;selectNode(id);if(isReview()){const el=document.querySelector('#eventPoints [data-node="'+id+'"]');if(el)el.focus()}return}
  const page=ev.target.closest('[data-page]');if(page){ev.stopPropagation();showSource(+page.dataset.page)}
 });

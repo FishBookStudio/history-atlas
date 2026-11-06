@@ -32,16 +32,15 @@ assert.equal(get('reviewId'),'party1');
 assert.equal(el('knowledgePopover').hidden,false);
 const card=el('detail').innerHTML;
 assert(card.includes('中共一大')&&card.includes('会议')&&card.includes('1921'),'card shows title/kind/date');
-assert(card.includes('class="cloze"')&&card.includes('data-reveal="edge:e16l:0"'),'inline cloze in points and relations');
+assert(card.includes('class="cloze"')&&card.includes('relation-line'),'inline cloze in points; relations listed plainly');
 assert(card.includes('揭晓：中共一大第 1 条核心知识中的第 1 处挖空'),'cloze has accessible name');
-assert(card.includes('揭晓：中共一大与毛泽东的'),'relation blank has accessible name');
-assert(card.includes('毛泽东'),'relation target name stays visible as a hint');
+assert(card.includes('毛泽东')&&card.includes('：出席'),'relation text visible in card (map shows it too)');
 assert(card.includes('武汉')===false,'party1 point 0 has no cloze leak');
 assert(!card.includes('嘉兴'),'blanked words are absent from the DOM before reveal');
 assert(card.includes('举行，最后一天转移到'),'context text stays visible');
-assert(!card.includes('出席'),'relation answers hidden before reveal');
-assert(el('relationLines').innerHTML.includes('？'),'relation text masked on map');
-assert(!el('relationLines').innerHTML.includes('data-edge="e16" tabindex="0" role="button" aria-label="毛泽东出席中共一大"'),'edge aria-label must not leak answer');
+assert(card.includes('出席'),'relation text is not blanked any more');
+assert(el('relationLines').innerHTML.includes('>出席<'),'map shows relation text directly');
+assert(el('relationLines').innerHTML.includes('aria-label="毛泽东出席中共一大"'),'edge aria-label carries the relation');
 // independent reveal: one clause only
 get("toggleReveal('p0:1')");
 assert(get("revealed.has('p0:1')")===true);
@@ -52,17 +51,15 @@ get('revealAll()');
 assert(get("revealed.has('p0:0')")&&get("revealed.has('p0:1')"));
 assert(get('revealed.size')>5);
 get('recoverAll()');assert.equal(get('revealed.size'),0);
-// relation reveal syncs to map
-assert(!el('relationLines').innerHTML.includes('出席'));
-get("toggleReveal('edge:e16l:0')");
-assert(el('relationLines').innerHTML.includes('出席'),'map shows relation after reveal');
+// relation text stays visible regardless of card blanks
+assert(el('relationLines').innerHTML.includes('>出席<'));
 // recover
 get('recoverAll()');
 assert.equal(get('revealed.size'),0);
-assert(el('relationLines').innerHTML.includes('？')&&!el('relationLines').innerHTML.includes('出席'),'recover re-masks map');
+assert(el('relationLines').innerHTML.includes('>出席<'),'recover does not blank the map');
 // reveal all then recover
 get('revealAll()');
-assert(el('relationLines').innerHTML.includes('出席'));
+assert(el('relationLines').innerHTML.includes('>出席<'));
 get('recoverAll()');
 // switching nodes starts covered
 get("selectNode('mao')");

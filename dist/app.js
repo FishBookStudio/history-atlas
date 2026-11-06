@@ -104,7 +104,6 @@ function highlight(id){
 }
 // ---------- Review mode ----------
 const edgeKey=e=>'edge:'+e.id;
-const edgeRevealed=e=>['','l'].some(x=>[...revealed].some(k=>k.startsWith(edgeKey(e)+x+':')));
 const linkText=e=>esc(e.label);
 function setMode(next){
  mode=next;const keep=reviewId;
@@ -153,7 +152,8 @@ function renderReviewDetail(){
  if(n.exam){cardAnswers.exam=`<div class="exam">${esc(n.exam)}</div>`;body.push(`<div class="detail-rule"></div><div class="section-label">易错提醒 / WATCH OUT</div><div class="review-exam">${coverHTML(n,'exam',`${n.title}的易错提醒`)}</div>`)}
  const relItems=[];
  es.forEach(e=>{const o=byId[other(e,n.id)],ok=e.source===n.id;
-  relItems.push(`<li class="cloze-line relation-line"><span class="cloze-text rel-name">${ok?'→ ':'← '}${esc(o.title)}</span><span class="cloze-text">：</span>${clozeSentence(e.label,[e.label],edgeKey(e)+'l',`${n.title}与${o.title}的`)}<button class="relation-jump" data-node="${o.id}" aria-label="打开${esc(o.title)}的复习卡片">↗</button></li>`) });
+  // 地图上的关系文字始终可见，卡片里也不再遮盖，只保留可跳转的关联清单。
+  relItems.push(`<li class="cloze-line relation-line"><span class="rel-name">${ok?'→ ':'← '}${esc(o.title)}</span><span class="rel-label">：${esc(e.label)}</span><button class="relation-jump" data-node="${o.id}" aria-label="打开${esc(o.title)}的复习卡片">↗</button></li>`) });
  body.push(`<div class="detail-rule"></div><div class="section-label">关联知识 / RELATIONS</div>${es.length?`<ul class="points review-relations">${relItems.join('')}</ul>`:'<p class="source">本样板尚未收录直接关系。</p>'}`);
  body.push(`<div class="source">来源：《史纲知识点》<br>${sourceButtons(n.pages)}<br>原书页码：${n.pages.map(p=>p+292).join('、')} · 摘要为整理表述</div>`);
  $('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>复习卡片</small></div><h2 id="cardTitle">${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div><div class="review-meta"><span>${esc(n.kind)}</span><span>${n.year<1919.34?'旧民主主义革命':'新民主主义革命'}</span><span>${es.length} 条直接关联</span>${allKeys().length?'':'<span>本项暂无需遮盖的复习内容</span>'}</div><div class="review-toolbar"><button id="revealAll" type="button">全部揭晓</button><button id="recoverAll" type="button">重新遮盖</button><span class="review-progress" id="reviewProgress"></span></div>${body.join('')}`;
@@ -189,13 +189,12 @@ function revealAll(){
 }
 function recoverAll(){if(!reviewId)return;revealed.clear();syncCardStates();highlightReview()}
 function highlightReview(){renderReviewLines(reviewId,reviewEdge)}
-const maskChip=l=>`<rect class="mask-chip" x="${l.x-9}" y="${l.y-9}" width="18" height="18" rx="9"/><text class="link-label mask-mark" x="${l.x}" y="${l.y+4}" text-anchor="middle">？</text>`;
 function labelMarkup(e,l,extraClass=''){
- return edgeRevealed(e)?`<text class="link-label ${extraClass}" x="${l.x}" y="${l.y+3}" text-anchor="middle">${linkText(e)}</text>`:`<g class="${extraClass}">${maskChip(l)}</g>`;
+ return `<text class="link-label ${extraClass}" x="${l.x}" y="${l.y+3}" text-anchor="middle">${linkText(e)}</text>`;
 }
 function placeLabel(e,a,b,occupied){
  const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2-(e.id===reviewEdge?20:35);
- const text=edgeRevealed(e)?e.label:'？',width=(edgeRevealed(e)?e.label.length*10:14)+8;let label=null;
+ const text=e.label,width=e.label.length*10+8;let label=null;
  for(const t of [.52,.36,.68,.24,.78,.15,.86]){const u=1-t,x=u*u*a[0]+2*u*t*mx+t*t*b[0],y=u*u*a[1]+2*u*t*my+t*t*b[1];
   const conflicts=occupied.filter(v=>Math.abs(v.y-y)<16&&Math.abs(v.x-x)<(v.width+width)/2).length+Object.values(positions).filter(v=>Math.abs(v[1]-y)<12&&Math.abs(v[0]-x)<width/2+12).length;
   if(!label||conflicts<label.conflicts)label={x,y,width,conflicts};if(!conflicts)break}
@@ -215,7 +214,7 @@ function renderReviewLines(focus,extra){
  const occupied=[];let html='';
  const draw=(e,focusEdge)=>{const a=positions[e.source],b=positions[e.target];if(!a||!b)return;
   const {label,mx,my,text}=placeLabel(e,a,b,occupied);
-  html+=`<g class="link-edge review-edge${edgeRevealed(e)?' is-revealed':''}${focusEdge?' focus-edge':''}" data-edge="${e.id}" tabindex="0" role="button" aria-label="${edgeRevealed(e)?esc(byId[e.source].title+e.label+byId[e.target].title):esc('关联未揭晓：'+byId[e.source].title+' 与 '+byId[e.target].title)}"><path d="M${a} Q${mx},${my} ${b}" fill="none" stroke="transparent" stroke-width="12"/><path class="stroke" d="M${a} Q${mx},${my} ${b}"/>${labelMarkup(e,label)}</g>`;
+  html+=`<g class="link-edge review-edge${focusEdge?' focus-edge':''}" data-edge="${e.id}" tabindex="0" role="button" aria-label="${esc(byId[e.source].title+e.label+byId[e.target].title)}"><path d="M${a} Q${mx},${my} ${b}" fill="none" stroke="transparent" stroke-width="12"/><path class="stroke" d="M${a} Q${mx},${my} ${b}"/>${labelMarkup(e,label)}</g>`;
  };
  if(ex)draw(ex,true);
  for(const e of links(focus))if(!ex||e.id!==ex.id)draw(e,false);
@@ -233,10 +232,8 @@ function reviewPreview(focus){
 }
 function toggleReviewEdge(edgeId){
  const e=D.edges.find(x=>x.id===edgeId);if(!e||!reviewId)return;
- reviewEdge=e.id;
- // 地图上点击关系线 -> 揭晓/遮盖这条关系文字（与卡片里的挖空同步）
- const labelKey=Object.keys(cardCloze).find(k=>k.startsWith(edgeKey(e)+'l:'))||Object.keys(cardCloze).find(k=>k.startsWith(edgeKey(e)+':'));
- toggleReveal(labelKey||edgeKey(e));
+ // 关系文字始终可见，点击连线只用于聚焦这条关系。
+ reviewEdge=reviewEdge===e.id?null:e.id;highlightReview();
 }
 function closeReviewCard(){
  const back=document.querySelector('#eventPoints [data-node="'+reviewId+'"]')||document.querySelector('#mainline [data-node="'+reviewId+'"]');

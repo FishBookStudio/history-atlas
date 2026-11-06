@@ -108,10 +108,9 @@
 @media(min-width:801px) and (max-width:1100px){body.review-mode .timeline-workspace{right:368px}}
 @media(max-width:800px){body.review-mode .time-navigator{padding-bottom:20px}}
 
-/* relation labels: readable in both modes, muted when masked */
+/* relation labels: readable in both modes */
 .link-label{fill:#4f6444;font-size:10.5px}
 .review-edge .link-label{fill:#4f6444}
-.review-edge:not(.is-revealed) .link-label{fill:#77896a;letter-spacing:1px}
 .review-edge .stroke{opacity:.72}
 .review-edge.preview-edge .link-label{fill:#8d9c7f}
 /* revealed cover becomes a slim recover control under the answer */
@@ -121,9 +120,6 @@
 .reveal-answer{font-size:12px}
 .reveal-answer .summary{font-size:12px}
 .reveal-row .reveal-answer{margin-top:2px}
-.mask-chip{fill:#eef2e6;stroke:#b9c7a7;stroke-width:1}
-.review-edge.focus-edge .mask-chip{fill:#e3ebd7;stroke:#7e9566}
-.review-edge.preview-edge .mask-chip{fill:#f4f6ee;stroke:#c8d3b8}
 
 /* ---------- Inline cloze (复习卡片正文挖空) ---------- */
 .review-summary{font-size:12px;line-height:2.05;color:#5f6e54;padding:12px 14px;background:#fbfcf7;border-left:2px solid #cfdabf;border-radius:0 4px 4px 0}
@@ -145,3 +141,4 @@
 .relation-jump{font-size:11px;color:#8a9c7a;padding:0 2px 0 5px}
 .relation-jump:hover{color:#3f5a33}
 .rel-name{color:#4c6140;font-weight:500;margin-right:1px}
+.rel-label{color:#6c7b60}

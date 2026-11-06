@@ -29,3 +29,98 @@
 .point.context-muted{opacity:.82}
 .point.crossing-muted{opacity:.28}
 @media(prefers-reduced-motion:reduce){.point{transition:none}}
+
+/* ---------- Mode switch ---------- */
+.mode-switch{flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:14px 26px 6px;min-height:52px}
+.mode-title{font-family:"Songti SC",serif;font-size:13px;letter-spacing:2px;color:#7d8b70}
+.mode-options{display:inline-flex;border:1px solid #d6dfcb;background:#f1f4ea;border-radius:6px;padding:2px;gap:2px}
+.mode-option{font-size:11px;padding:6px 15px;border-radius:4px;color:#7c8b6d;letter-spacing:.6px;transition:background .15s,color .15s}
+.mode-option:hover{color:#4f6641}
+.mode-option.is-selected{background:var(--green);color:#f5f7ee;box-shadow:0 1px 3px #1c382a22}
+.mode-hint{margin-left:auto;font-size:10px;color:#9aa78a;letter-spacing:.4px}
+@media(max-width:800px){.mode-switch{padding:10px 16px 4px;gap:10px;min-height:46px}.mode-title,.mode-hint{display:none}.mode-option{padding:6px 11px;font-size:10px}}
+
+/* ---------- Review card (right sidebar, reuses the knowledge popover) ---------- */
+.knowledge-popover.review-card{left:auto;right:20px;top:66px;bottom:22px;width:392px;max-height:none;box-shadow:-10px 10px 60px #1c382a1a,0 3px 12px #1c382a0d}
+.review-card .popover-controls{background:#eff3e7}
+.review-card .detail-panel{padding:18px 22px 24px}
+.review-meta{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 12px}
+.review-meta span{font-size:9px;color:#7f8f70;background:#f0f4e8;border:1px solid #e2e8d6;border-radius:3px;padding:3px 7px}
+.review-toolbar{display:flex;gap:14px;align-items:center;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.review-toolbar button{font-size:10px;color:#95a186;padding:2px 0;letter-spacing:.4px}
+.review-toolbar button:hover{color:#5d7350;text-decoration:underline}
+.review-toolbar button:last-child{color:#708359;border-bottom:1px dotted #b5c2a4}
+.review-toolbar button:last-child:hover{color:#3f5a33}
+.review-points,.review-relations{margin:0;padding-left:0;list-style:none}
+.review-points li,.review-relations li{margin-bottom:8px;padding:0}
+.review-summary .cover{margin-bottom:2px}
+.cover{display:block;width:100%;text-align:left;background:#e9eee1;border:1px dashed #c5d1b5;border-radius:5px;padding:11px 13px;color:#5c6f4f;font-size:11px;line-height:1.6;transition:background .16s,border-color .16s,color .16s,opacity .16s}
+.cover:hover{background:#e0e7d4;border-color:#a9ba96}
+.cover:focus-visible{outline:2px solid #b99c68;outline-offset:2px}
+.cover .cover-tip{display:block;margin-top:4px;font-size:9px;color:#93a184;letter-spacing:.8px}
+.cover .cover-q{display:block}
+.cover.is-revealed{background:transparent;border-color:transparent;padding:5px 2px;color:#8c9a7e;opacity:.85}
+.cover.is-revealed:hover{opacity:1;text-decoration:underline}
+.cover.is-revealed .cover-q{display:none}
+.cover.is-revealed .cover-tip{font-size:0}
+.cover.is-revealed .cover-tip::after{content:'已揭晓 · 点击重新遮盖';font-size:9px;letter-spacing:.8px}
+.cover:not(.is-revealed)+.reveal-answer{display:none}
+.reveal-row{padding:0;border:0}
+.reveal-answer{padding:9px 13px 11px;margin-top:6px;font-size:11px;line-height:1.9;color:#5c6b51;background:#fbfcf7;border-left:2px solid #cfdabf;border-radius:0 4px 4px 0;animation:reveal-in .16s ease-out}
+.reveal-answer .summary{margin:0;font-size:11px;line-height:1.9}
+.reveal-answer .exam{margin-top:0}
+.reveal-answer .answer-word{display:block;margin-bottom:2px;color:#4c6140}
+.reveal-answer .answer-word b{font-weight:500;color:#33502f}
+.reveal-answer .relation-link{padding:6px 0 2px;border-bottom:0;color:#85977a;font-size:9px}
+.reveal-answer .relation-link small{font-size:8px}
+.reveal-answer .relation-link:hover{color:#4f6941}
+.review-summary .reveal-answer,.review-exam .reveal-answer{margin-top:6px}
+.review-exam .cover{margin-top:0}
+@keyframes reveal-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+
+/* ---------- Review map states ---------- */
+.review-mode .point.context-muted{opacity:.52}
+.review-mode .point.related{opacity:1}
+.review-mode .point.related .halo{opacity:.16}
+.review-mode .point.active .dot{stroke:var(--green);stroke-width:2}
+.review-mode .point.active .halo{opacity:.24}
+.review-mode .point.active .point-label{font-weight:600;fill:#33502f}
+.review-edge .stroke{stroke:#9caf85;stroke-width:1.2;opacity:.6}
+.review-edge .link-label{opacity:1;fill:#536746;font-size:10px}
+.review-edge:not(.is-revealed) .link-label{fill:#8b9a7d}
+.review-edge.is-revealed .stroke{stroke:#7e9566;opacity:.85}
+.review-edge:focus-visible .stroke,.review-edge:focus-visible .link-label{stroke:#aa8c53;fill:#aa8c53}
+.review-edge.preview-edge .stroke{stroke:#9caf85;stroke-dasharray:3 4;opacity:.4}
+.review-edge.preview-edge .link-label{fill:#9aa88b}
+.review-edge.focus-edge .stroke{stroke:#5f7f4d;stroke-width:2;opacity:.95}
+.review-mode #timelineCanvas{cursor:grab}
+
+@media(max-width:1100px){.knowledge-popover.review-card{width:344px;right:14px}}
+@media(max-width:800px){
+ .knowledge-popover.review-card{left:10px;right:10px;top:auto;bottom:10px;width:auto;max-height:64dvh;box-shadow:0 -10px 50px #1c382a1f;border-radius:10px}
+ .review-card .detail-panel{padding:14px 18px 20px}
+ .mode-hint{display:none}
+}
+@media(max-width:520px){.knowledge-popover.review-card{max-height:70dvh}}
+
+/* Reserve room for the review card so it never covers the timeline itself. */
+@media(min-width:1101px){body.review-mode .timeline-workspace{right:412px}body.review-mode .mode-switch{padding-right:26px}}
+@media(min-width:801px) and (max-width:1100px){body.review-mode .timeline-workspace{right:368px}}
+@media(max-width:800px){body.review-mode .time-navigator{padding-bottom:20px}}
+
+/* relation labels: readable in both modes, muted when masked */
+.link-label{fill:#4f6444;font-size:10.5px}
+.review-edge .link-label{fill:#4f6444}
+.review-edge:not(.is-revealed) .link-label{fill:#77896a;letter-spacing:1px}
+.review-edge .stroke{opacity:.72}
+.review-edge.preview-edge .link-label{fill:#8d9c7f}
+/* revealed cover becomes a slim recover control under the answer */
+.cover.is-revealed{display:inline-block;width:auto;padding:0 0 4px;border:0;background:transparent;color:#98a58a;font-size:9px;letter-spacing:.4px}
+.cover.is-revealed:hover{color:#5d7350;text-decoration:underline}
+.cover.is-revealed .cover-tip{margin:0;color:inherit}
+.reveal-answer{font-size:12px}
+.reveal-answer .summary{font-size:12px}
+.reveal-row .reveal-answer{margin-top:2px}
+.mask-chip{fill:#eef2e6;stroke:#b9c7a7;stroke-width:1}
+.review-edge.focus-edge .mask-chip{fill:#e3ebd7;stroke:#7e9566}
+.review-edge.preview-edge .mask-chip{fill:#f4f6ee;stroke:#c8d3b8}

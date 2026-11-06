@@ -6,6 +6,9 @@ const MIN=1919,MAX=1928,MIN_SPAN=.5;
 const timelinePointer={visible:false,clientX:0,clientY:0};
 let state={selected:'may4',active:new Set(kinds),query:'',start:MIN,end:MAX};
 let previewId=null,pinned=false,hoverTimer,closeTimer,lastAnchor=null,drag=null,positions={},dimensions={};
+// Review mode: one node is fixed at a time; a hovered node only previews its links.
+let mode='study',reviewId=null,reviewEdge=null,revealed=new Set(),suppressFocusPreview=false;
+const isReview=()=>mode==='review';
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const links=id=>D.edges.filter(e=>e.source===id||e.target===id);
 const other=(e,id)=>e.source===id?e.target:e.source;
@@ -13,11 +16,13 @@ const inRange=n=>n.year>=state.start&&n.year<state.end;
 function visible(){const q=state.query.trim().toLowerCase();return D.nodes.filter(n=>state.active.has(n.kind)&&inRange(n)&&(!q||[n.title,n.summary,n.kind,...n.points].join(' ').toLowerCase().includes(q)))}
 function sourceButtons(pages){return pages.map(p=>`<button data-page="${p}">PDF 第 ${p} 页</button>`).join(' · ')}
 function selectNode(id,anchor){
+ if(isReview())return selectReview(id);
  const n=byId[id];state.selected=id;state.active.add(n.kind);
  if(!visible().some(v=>v.id===id)){state.query='';$('search').value='';if(!inRange(n)){const span=state.end-state.start;state.start=Math.max(MIN,Math.min(n.year-span/2,MAX-span));state.end=state.start+span}}
  previewId=id;pinned=true;render();const live=document.querySelector((anchor?.closest('#mainline')?'#mainline ':'#eventPoints ')+'[data-node="'+id+'"]');openPopover(id,anchor?live:null,true);
 }
-function render(){renderFilters();renderTimeline();renderMini();$('empty').hidden=visible().length>0}
+function render(){renderFilters();renderTimeline();renderMini();$('empty').hidden=visible().length>0;updateHint()}
+function updateHint(){$('modeHint').textContent=isReview()?'悬停预览关联 · 点击打开复习卡片':'悬停查看关联，点击打开知识卡片'}
 function renderFilters(){$('filters').innerHTML=kinds.map(k=>`<button class="filter ${state.active.has(k)?'is-selected':''}" data-kind="${k}" aria-pressed="${state.active.has(k)}"><b style="background:${colors[k]}"></b><span>${k}</span></button>`).join('')}
 
 function renderTimeline(){
@@ -55,7 +60,7 @@ function renderTimeline(){
  }
  svg+='<g id="relationLines"></g><g id="eventPoints">';
  for(const {n,px,py,leftLabel} of points){svg+=`<g class="point" data-node="${n.id}" tabindex="0" role="button" aria-haspopup="dialog" aria-label="${esc(n.title+' · '+n.date)}" style="--c:${colors[n.kind]}" transform="translate(${px},${py})"><circle class="hit" r="14"/><circle class="halo" r="10"/><circle class="dot" r="4.5"/><text class="point-label" x="${leftLabel?-11:11}" y="4" text-anchor="${leftLabel?'end':'start'}">${esc(n.title)}</text></g>`}
- svg+='</g><line id="timelineCursor" class="timeline-cursor" aria-hidden="true" visibility="hidden"/><circle id="timelineCursorDot" class="timeline-cursor-dot" r="4" aria-hidden="true" visibility="hidden"/></svg>';canvas.innerHTML=svg;highlight(previewId);renderTimelineCursor();
+ svg+='</g><line id="timelineCursor" class="timeline-cursor" aria-hidden="true" visibility="hidden"/><circle id="timelineCursorDot" class="timeline-cursor-dot" r="4" aria-hidden="true" visibility="hidden"/></svg>';canvas.innerHTML=svg;isReview()?highlightReview():highlight(previewId);renderTimelineCursor();
 }
 function renderTimelineCursor(){
  const line=$('timelineCursor'),dot=$('timelineCursorDot');if(!line||!dot)return;
@@ -97,6 +102,119 @@ function highlight(id){
  });
 
 }
+// ---------- Review mode ----------
+const edgeKey=e=>'edge:'+e.id;
+const edgeRevealed=e=>revealed.has(edgeKey(e));
+const linkText=e=>esc(e.label);
+function setMode(next){
+ mode=next;const keep=reviewId;
+ if(!isReview()){reviewId=null;reviewEdge=null;revealed.clear();}
+ for(const b of document.querySelectorAll('.mode-option')){const on=b.dataset.mode===mode;b.classList.toggle('is-selected',on);b.setAttribute('aria-pressed',String(on))}
+ document.body.classList.toggle('review-mode',isReview());$('knowledgePopover').classList.remove('review-card','light-read');updateHint();closePopover();
+ if(isReview()){renderTimeline();if(keep&&byId[keep]){reviewId=keep;openReviewCard(keep)}}
+ else render();
+}
+function selectReview(id){
+ if(!byId[id])return;
+ const n=byId[id];state.selected=id;state.active.add(n.kind);
+ if(!visible().some(v=>v.id===id)){state.query='';$('search').value='';if(!inRange(n)){const span=state.end-state.start;state.start=Math.max(MIN,Math.min(n.year-span/2,MAX-span));state.end=state.start+span}}
+ reviewId=id;reviewEdge=null;revealed=new Set();render();openReviewCard(id);
+}
+function openReviewCard(id){
+ const shown=positions[id]?document.querySelector('#eventPoints [data-node="'+id+'"]'):document.querySelector('#mainline [data-node="'+id+'"]');
+ openPopover(id,shown,true);
+}
+function questionFor(n,e){const o=byId[other(e,n.id)];return `${n.title} 与「${o.title}」是什么关系？`}
+function coverHTML(n,key,question,tip){
+ return `<button class="cover" data-reveal="${key}" aria-expanded="false" aria-label="揭晓：${esc(question)}"><span class="cover-q">${esc(question)}</span><span class="cover-tip">${tip||'点击揭晓'}</span></button>`;
+}
+function relationAnswerHTML(n,e){
+ const o=byId[other(e,n.id)],ok=e.source===n.id;
+ return `<span class="answer-word">${esc(o.title)}${ok?'：':' ← '}<b>${esc(e.label)}</b></span><button class="relation-link" data-node="${o.id}" data-switch="1"><span>${esc(o.title)} ↗</span><small>打开复习卡片</small></button>`;
+}
+let cardAnswers={};
+function renderReviewDetail(){
+ const n=byId[reviewId],es=links(n.id);cardAnswers={};
+ const body=[];
+ if(n.summary){cardAnswers.summary=`<p class="summary">${esc(n.summary)}</p>`;body.push(`<div class="review-summary">${coverHTML(n,'summary',`${n.title}的知识概览是什么？`)}</div>`)}
+ if(n.points.length){n.points.forEach((p,i)=>{cardAnswers['point:'+i]=`<span class="point-text">${esc(p)}</span>`});
+  body.push(`<div class="detail-rule"></div><div class="section-label">核心知识 / KEY POINTS</div><ul class="points review-points">${n.points.map((p,i)=>`<li class="reveal-row">${coverHTML(n,'point:'+i,`${n.title}的第 ${i+1} 条核心知识`)}</li>`).join('')}</ul>`)}
+ if(n.exam){cardAnswers.exam=`<div class="exam">${esc(n.exam)}</div>`;body.push(`<div class="detail-rule"></div><div class="section-label">易错提醒 / WATCH OUT</div><div class="review-exam">${coverHTML(n,'exam',`${n.title}的易错提醒`)}</div>`)}
+ es.forEach(e=>{cardAnswers['edge:'+e.id]=relationAnswerHTML(n,e)});
+ body.push(`<div class="detail-rule"></div><div class="section-label">关联知识 / RELATIONS</div>${es.length?`<ul class="points review-relations">${es.map(e=>`<li class="reveal-row">${coverHTML(n,'edge:'+e.id,questionFor(n,e))}</li>`).join('')}</ul>`:'<p class="source">本样板尚未收录直接关系。</p>'}`);
+ body.push(`<div class="source">来源：《史纲知识点》<br>${sourceButtons(n.pages)}<br>原书页码：${n.pages.map(p=>p+292).join('、')} · 摘要为整理表述</div>`);
+ $('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>复习卡片</small></div><h2 id="cardTitle">${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div><div class="review-meta"><span>${esc(n.kind)}</span><span>${n.year<1919.34?'旧民主主义革命':'新民主主义革命'}</span><span>${es.length} 条直接关联</span>${Object.keys(cardAnswers).length?'':'<span>本项暂无需要遮盖的复习内容</span>'}</div><div class="review-toolbar"><button id="revealAll" type="button">全部揭晓</button><button id="recoverAll" type="button">重新遮盖</button></div>${body.join('')}`;
+ syncCardStates();
+}
+function syncCardStates(){
+ const detail=$('detail');if(!detail)return;
+ for(const btn of detail.querySelectorAll('.cover')){const key=btn.dataset.reveal,on=revealed.has(key),next=btn.nextElementSibling;
+  btn.classList.toggle('is-revealed',on);btn.setAttribute('aria-expanded',String(on));
+  const tip=btn.querySelector('.cover-tip');if(tip)tip.textContent=on?'已揭晓 · 点击重新遮盖':'点击揭晓';
+  if(on){if(!next||!next.classList.contains('reveal-answer')){const ans=document.createElement('div');ans.className='reveal-answer';ans.innerHTML=cardAnswers[key]||'';btn.after(ans)}}
+  else if(next&&next.classList.contains('reveal-answer'))next.remove();
+ }
+}
+function toggleReveal(key){if(!reviewId)return;if(revealed.has(key))revealed.delete(key);else revealed.add(key);syncCardStates();highlightReview()}
+function revealAll(){
+ if(!reviewId||!isReview())return;const n=byId[reviewId];
+ revealed=new Set([...n.points.map((_,i)=>`point:${i}`),...links(n.id).map(e=>`edge:${e.id}`)]);
+ if(n.summary)revealed.add('summary');if(n.exam)revealed.add('exam');
+ syncCardStates();highlightReview();
+}
+function recoverAll(){if(!reviewId)return;revealed.clear();syncCardStates();highlightReview()}
+function highlightReview(){renderReviewLines(reviewId,reviewEdge)}
+const maskChip=l=>`<rect class="mask-chip" x="${l.x-9}" y="${l.y-9}" width="18" height="18" rx="9"/><text class="link-label mask-mark" x="${l.x}" y="${l.y+4}" text-anchor="middle">？</text>`;
+function labelMarkup(e,l,extraClass=''){
+ return edgeRevealed(e)?`<text class="link-label ${extraClass}" x="${l.x}" y="${l.y+3}" text-anchor="middle">${linkText(e)}</text>`:`<g class="${extraClass}">${maskChip(l)}</g>`;
+}
+function placeLabel(e,a,b,occupied){
+ const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2-(e.id===reviewEdge?20:35);
+ const text=edgeRevealed(e)?e.label:'？',width=(edgeRevealed(e)?e.label.length*10:14)+8;let label=null;
+ for(const t of [.52,.36,.68,.24,.78,.15,.86]){const u=1-t,x=u*u*a[0]+2*u*t*mx+t*t*b[0],y=u*u*a[1]+2*u*t*my+t*t*b[1];
+  const conflicts=occupied.filter(v=>Math.abs(v.y-y)<16&&Math.abs(v.x-x)<(v.width+width)/2).length+Object.values(positions).filter(v=>Math.abs(v[1]-y)<12&&Math.abs(v[0]-x)<width/2+12).length;
+  if(!label||conflicts<label.conflicts)label={x,y,width,conflicts};if(!conflicts)break}
+ occupied.push(label);return {label,mx,my,text};
+}
+function renderReviewLines(focus,extra){
+ const group=$('relationLines');if(!group)return;group.innerHTML='';
+ document.querySelectorAll('#timelineCanvas [data-node]').forEach(el=>el.classList.remove('active','related','context-muted','crossing-muted'));
+ if(!focus)return;
+ const ex=extra?D.edges.find(x=>x.id===extra):null,related=new Set(links(focus).map(e=>other(e,focus)));
+ if(ex){related.add(ex.source);related.add(ex.target);related.delete(focus)}
+ document.querySelectorAll('#timelineCanvas [data-node]').forEach(el=>{const id=el.dataset.node;
+  el.classList.toggle('active',id===focus||!!(ex&&(ex.source===id||ex.target===id)));
+  el.classList.toggle('related',related.has(id));
+  el.classList.toggle('context-muted',id!==focus&&!related.has(id));
+ });
+ const occupied=[];let html='';
+ const draw=(e,focusEdge)=>{const a=positions[e.source],b=positions[e.target];if(!a||!b)return;
+  const {label,mx,my,text}=placeLabel(e,a,b,occupied);
+  html+=`<g class="link-edge review-edge${edgeRevealed(e)?' is-revealed':''}${focusEdge?' focus-edge':''}" data-edge="${e.id}" tabindex="0" role="button" aria-label="${edgeRevealed(e)?esc(byId[e.source].title+e.label+byId[e.target].title):esc('关联未揭晓：'+byId[e.source].title+' 与 '+byId[e.target].title)}"><path d="M${a} Q${mx},${my} ${b}" fill="none" stroke="transparent" stroke-width="12"/><path class="stroke" d="M${a} Q${mx},${my} ${b}"/>${labelMarkup(e,label)}</g>`;
+ };
+ if(ex)draw(ex,true);
+ for(const e of links(focus))if(!ex||e.id!==ex.id)draw(e,false);
+ group.innerHTML=html;
+}
+function reviewPreview(focus){
+ const group=$('relationLines');if(!group)return;group.innerHTML='';
+ document.querySelectorAll('#timelineCanvas [data-node]').forEach(el=>el.classList.remove('active','related','context-muted','crossing-muted'));
+ if(!focus)return;
+ const related=new Set(links(focus).map(e=>other(e,focus)));
+ document.querySelectorAll('#timelineCanvas [data-node]').forEach(el=>{const id=el.dataset.node;el.classList.toggle('active',id===focus);el.classList.toggle('related',id!==focus&&related.has(id));el.classList.toggle('context-muted',id!==focus&&!related.has(id))});
+ const occupied=[];let html='';
+ for(const e of links(focus)){const a=positions[e.source],b=positions[e.target];if(!a||!b)continue;const {label,mx,my,text}=placeLabel(e,a,b,occupied);html+=`<g class="link-edge review-edge preview-edge" aria-hidden="true"><path class="stroke" d="M${a} Q${mx},${my} ${b}"/>${labelMarkup(e,label)}</g>`}
+ group.innerHTML=html;
+}
+function toggleReviewEdge(edgeId){
+ const e=D.edges.find(x=>x.id===edgeId);if(!e||!reviewId)return;
+ reviewEdge=e.id;toggleReveal(edgeKey(e));
+}
+function closeReviewCard(){
+ const back=document.querySelector('#eventPoints [data-node="'+reviewId+'"]')||document.querySelector('#mainline [data-node="'+reviewId+'"]');
+ reviewId=null;reviewEdge=null;revealed.clear();closePopover();
+ if(back&&back.isConnected){suppressFocusPreview=true;back.focus();suppressFocusPreview=false}
+}
 function dateLabel(year,end=false){const y=Math.floor(year-(end?.00001:0));if(state.end-state.start>=3)return String(y);const month=Math.min(12,Math.max(1,Math.floor((year-y)*12)+1));return `${y}.${String(month).padStart(2,'0')}`}
 function renderMini(){
  $('miniDots').innerHTML=D.nodes.map((n,i)=>`<span class="mini-dot" style="left:${(n.year-MIN)/(MAX-MIN)*100}%;height:${8+(i%5)*4}px"></span>`).join('');
@@ -105,13 +223,14 @@ function renderMini(){
  win.setAttribute('aria-label','移动时间选区 '+label+'，左右方向键平移');
  $('startHandle').setAttribute('aria-valuenow',state.start.toFixed(2));$('startHandle').setAttribute('aria-valuetext',dateLabel(state.start));$('endHandle').setAttribute('aria-valuenow',state.end.toFixed(2));$('endHandle').setAttribute('aria-valuetext',dateLabel(state.end,true));
 }
-function applyRange(a,b){const span=Math.max(MIN_SPAN,Math.min(MAX-MIN,b-a));state.start=Math.max(MIN,Math.min(a,MAX-span));state.end=state.start+span;closePopover();renderTimeline();renderMini();$('empty').hidden=visible().length>0;}
-function renderDetail(){const n=byId[previewId||state.selected],es=links(n.id);$('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>知识档案 / ${n.id.toUpperCase().slice(0,8)}</small></div><h2>${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div>${!inRange(n)?'<p class="out-range">此知识点位于当前时间范围之外</p>':''}<div class="context-note">${n.year<1919.34?'旧民主主义革命':'新民主主义革命'} · 资产阶级民主革命<br>半殖民地半封建社会</div><p class="summary">${esc(n.summary)}</p><div class="detail-rule"></div><div class="section-label">核心知识 / KEY POINTS</div><ul class="points">${n.points.map(p=>`<li>${esc(p)}</li>`).join('')}</ul><div class="detail-rule"></div><div class="section-label">关联知识</div>${es.map(e=>{const o=byId[other(e,n.id)];return `<button class="relation-link" data-node="${o.id}"><span>${esc(o.title)} ↗</span><small>${e.source===n.id?'→':'←'} ${esc(e.label)}</small></button>`}).join('')||'<p class="source">本样板尚未收录直接关系。</p>'}<div class="source">来源：《史纲知识点》<br>${sourceButtons(n.pages)}<br>原书页码：${n.pages.map(p=>p+292).join('、')} · 摘要为整理表述</div>`;}
+function applyRange(a,b){const span=Math.max(MIN_SPAN,Math.min(MAX-MIN,b-a));state.start=Math.max(MIN,Math.min(a,MAX-span));state.end=state.start+span;if(!(isReview()&&reviewId))closePopover();renderTimeline();renderMini();$('empty').hidden=visible().length>0;if(isReview()&&reviewId){const el=document.querySelector('#eventPoints [data-node="'+reviewId+'"]');if(el)lastAnchor=el;highlightReview()}}
+function renderDetail(){const n=byId[previewId||state.selected],es=links(n.id);if(isReview()){renderReviewDetail();return}$('detail').innerHTML=`<div class="detail-top"><span class="badge">${n.kind}</span><small>知识档案 / ${n.id.toUpperCase().slice(0,8)}</small></div><h2 id="cardTitle">${esc(n.title)}</h2><div class="detail-date">${esc(n.date)}</div>${!inRange(n)?'<p class="out-range">此知识点位于当前时间范围之外</p>':''}<div class="context-note">${n.year<1919.34?'旧民主主义革命':'新民主主义革命'} · 资产阶级民主革命<br>半殖民地半封建社会</div><p class="summary">${esc(n.summary)}</p><div class="detail-rule"></div><div class="section-label">核心知识 / KEY POINTS</div><ul class="points">${n.points.map(p=>`<li>${esc(p)}</li>`).join('')}</ul><div class="detail-rule"></div><div class="section-label">关联知识</div>${es.map(e=>{const o=byId[other(e,n.id)];return `<button class="relation-link" data-node="${o.id}"><span>${esc(o.title)} ↗</span><small>${e.source===n.id?'→':'←'} ${esc(e.label)}</small></button>`}).join('')||'<p class="source">本样板尚未收录直接关系。</p>'}<div class="source">来源：《史纲知识点》<br>${sourceButtons(n.pages)}<br>原书页码：${n.pages.map(p=>p+292).join('、')} · 摘要为整理表述</div>`;}
 
 function modal(html){closePopover();$('modalBody').innerHTML=html;if(!$('modal').open)$('modal').showModal()}
 function showSource(p){modal(`<div class="eyebrow">SOURCE / 原文依据</div><h2>《史纲知识点》 · PDF 第 ${p} 页</h2><p>原书第 ${p+292} 页。知识摘要经过整理，请结合原文理解上下文。</p><img src="sources/page-${p}.jpg" alt="史纲知识点 PDF 第 ${p} 页的完整扫描原页">`)}
 function edgeInfo(id){const e=D.edges.find(e=>e.id===id);modal(`<div class="eyebrow">RELATION / 关系依据</div><h2>${esc(byId[e.source].title)}</h2><p>↓ ${esc(e.label)}</p><h2>${esc(byId[e.target].title)}</h2><p>${esc(e.note)}</p>${['mao','aug7','armed'].includes(e.source)&&['mao','aug7','armed'].includes(e.target)?'<div class="exam"><b>完整事实</b>毛泽东在八七会议上强调须知政权是由枪杆子中取得的。这里同时关联人物、会议和思想，保留提出的语境。</div>':''}<div class="source">核对原文：${sourceButtons([e.page])}</div>`)}
-function about(){modal(`<div class="eyebrow">EDITION 01 / 内容范围</div><h2>先读懂一段历史。</h2><p>本版覆盖 1919—1927 年的精选知识。依据 PDF 第 34—47 页人工核读整理，尚未完成该章节全部考点的逐条导入，也不代表全书覆盖。</p><ul><li>保留事件、政治、会议、著作、思想、人物、组织、文献和政策九类入口。</li><li>每个节点与每条关系都能查看 PDF 原页。摘要是整理表述。</li><li>人物时间表示本样板相关活动时间；仅精确到年的资料使用年内示意位置。时间轴以节点定位为主，完整时间范围见详情。</li><li>拖动底部选区两端缩放时间，拖动中间平移；在主轴滚轮缩放、拖动平移，双击恢复全部。知识关系直接在时间轴上展开。</li></ul>`)}
+function about(){modal(`<div class="eyebrow">EDITION 01 / 内容范围</div><h2>先读懂一段历史。</h2><p>本版覆盖 1919—1927 年的精选知识。依据 PDF 第 34—47 页人工核读整理，尚未完成该章节全部考点的逐条导入，也不代表全书覆盖。</p><ul><li>保留事件、政治、会议、著作、思想、人物、组织、文献和政策九类入口。</li><li>每个节点与每条关系都能查看 PDF 原页。摘要是整理表述。</li><li>人物时间表示本样板相关活动时间；仅精确到年的资料使用年内示意位置。时间轴以节点定位为主，完整时间范围见详情。</li><li>拖动底部选区两端缩放时间，拖动中间平移；在主轴滚轮缩放、拖动平移，双击恢复全部。知识关系直接在时间轴上展开。</li><li>复习模式：点击知识点打开右侧复习卡片，卡片内容逐条遮盖；揭晓关联后，地图上的关系文字同步显示。</li></ul>`)}
+
 function positionPopover(anchor){
  const card=$('knowledgePopover'),w=Math.min(pinned?360:238,innerWidth-24);card.style.width=w+'px';
  const h=Math.min(card.offsetHeight||520,innerHeight-32);
@@ -119,22 +238,31 @@ function positionPopover(anchor){
  card.style.left=x+'px';card.style.top=y+'px';
 }
 function openPopover(id,anchor,lock=false){clearTimeout(hoverTimer);clearTimeout(closeTimer);previewId=id;pinned=lock;lastAnchor=anchor||lastAnchor;
- const card=$('knowledgePopover');card.classList.toggle('light-read',!lock);card.setAttribute('role',lock?'dialog':'tooltip');
- if(lock){renderDetail();$('popoverState').textContent='已固定 · Esc 关闭'}else{const n=byId[id];$('detail').innerHTML=`<div class="detail-date">${esc(n.date)}</div><p class="light-summary">${esc(n.summary)}</p>`;}
- card.hidden=false;positionPopover(anchor);highlight(id);}
-function closePopover(){clearTimeout(hoverTimer);clearTimeout(closeTimer);$('knowledgePopover').hidden=true;previewId=null;pinned=false;lastAnchor=null;highlight(null);}
+ const card=$('knowledgePopover'),review=isReview();if(review){card.style.left='';card.style.top='';card.style.width=''}
+ card.classList.toggle('light-read',!lock);card.classList.toggle('review-card',review);card.setAttribute('role',lock?'dialog':'tooltip');
+ if(lock){renderDetail();$('popoverState').textContent=review?'复习模式 · Esc 关闭':'已固定 · Esc 关闭'}else{const n=byId[id];$('detail').innerHTML=`<div class="detail-date">${esc(n.date)}</div><p class="light-summary">${esc(n.summary)}</p>`;}
+ card.hidden=false;if(!review)positionPopover(anchor);review?highlightReview():highlight(id);}
+function closePopover(){clearTimeout(hoverTimer);clearTimeout(closeTimer);$('knowledgePopover').hidden=true;previewId=null;pinned=false;lastAnchor=null;if(isReview()){reviewId=null;reviewEdge=null;revealed.clear();highlightReview()}else highlight(null);}
 function scheduleClose(){clearTimeout(hoverTimer);clearTimeout(closeTimer);if(!pinned)closeTimer=setTimeout(()=>{if(!$('knowledgePopover').contains(document.activeElement))closePopover()},240);}
-function previewNode(el){if(pinned||drag||!el)return;clearTimeout(closeTimer);clearTimeout(hoverTimer);hoverTimer=setTimeout(()=>openPopover(el.dataset.node,el),140);}
-$('closePopover').onclick=()=>{const target=lastAnchor;closePopover();if(target?.isConnected)target.focus();clearTimeout(hoverTimer)};
+function previewNode(el){if(pinned||drag||!el)return;clearTimeout(closeTimer);clearTimeout(hoverTimer);if(isReview()){hoverTimer=setTimeout(()=>{if(!pinned)reviewPreview(el.dataset.node)},110);return}hoverTimer=setTimeout(()=>openPopover(el.dataset.node,el),140);}
+$('closePopover').onclick=()=>{if(isReview()){closeReviewCard();return}const target=lastAnchor;closePopover();if(target?.isConnected)target.focus();clearTimeout(hoverTimer)};
 
 $('knowledgePopover').addEventListener('pointerenter',()=>clearTimeout(closeTimer));
 $('knowledgePopover').addEventListener('pointerleave',scheduleClose);
+$('knowledgePopover').addEventListener('click',ev=>{
+ if(ev.target.closest('#revealAll')){ev.stopPropagation();revealAll();return}
+ if(ev.target.closest('#recoverAll')){ev.stopPropagation();recoverAll();return}
+ const cover=ev.target.closest('.cover');
+ if(cover){ev.stopPropagation();toggleReveal(cover.dataset.reveal);return}
+ const node=ev.target.closest('[data-node]');if(node){ev.stopPropagation();const id=node.dataset.node;selectNode(id);if(isReview()){const el=document.querySelector('#eventPoints [data-node="'+id+'"]');if(el)el.focus()}return}
+ const page=ev.target.closest('[data-page]');if(page){ev.stopPropagation();showSource(+page.dataset.page)}
+});
 document.addEventListener('pointerover',ev=>{if(ev.pointerType==='touch')return;const n=ev.target.closest('[data-node]');if(n&&!n.closest('#knowledgePopover')&&!n.contains(ev.relatedTarget))previewNode(n)});
-document.addEventListener('pointerout',ev=>{const n=ev.target.closest('[data-node]');if(n&&!n.closest('#knowledgePopover')&&!n.contains(ev.relatedTarget))scheduleClose()});
-document.addEventListener('focusin',ev=>{const n=ev.target.closest('[data-node]');if(n&&!n.closest('#knowledgePopover'))previewNode(n)});
-document.addEventListener('focusout',ev=>{if(!ev.relatedTarget?.closest('#knowledgePopover,[data-node]'))scheduleClose()});
+document.addEventListener('pointerout',ev=>{const n=ev.target.closest('[data-node]');if(n&&!n.closest('#knowledgePopover')&&!n.contains(ev.relatedTarget)){if(isReview()){clearTimeout(hoverTimer);if(!pinned)reviewPreview(reviewId);return}scheduleClose()}});
+document.addEventListener('focusin',ev=>{if(suppressFocusPreview)return;const n=ev.target.closest('[data-node]');if(!n||n.closest('#knowledgePopover'))return;if(isReview()){if(!ev.target.closest('#knowledgePopover')){const hovered=ev.target.closest('#timelineCanvas [data-node]');if(hovered&&hovered.dataset.node!==reviewId)reviewPreview(hovered.dataset.node)}return}previewNode(n)});
+document.addEventListener('focusout',ev=>{if(isReview()){const node=ev.target.closest('[data-node]');if(node&&!ev.relatedTarget?.closest('#knowledgePopover,[data-node]')){if(!pinned)reviewPreview(reviewId)}return}if(!ev.relatedTarget?.closest('#knowledgePopover,[data-node]'))scheduleClose()});
 document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#knowledgePopover,[data-node],[data-edge],dialog')){closePopover()}});
-document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!$('modal').open){const target=lastAnchor;closePopover();if(target?.isConnected)target.focus();clearTimeout(hoverTimer)}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!$('modal').open){if(isReview()){closeReviewCard();return}const target=lastAnchor;closePopover();if(target?.isConnected)target.focus();clearTimeout(hoverTimer)}});
 
 function showEra(){modal('<div class="eyebrow">CONTEXT / 历史背景</div><h2>三个维度，分别理解</h2><p><b>革命阶段：</b>1919 年五四运动是新民主主义革命的开端。样板后段由大革命转向土地革命战争时期的新道路探索。</p><p><b>革命性质：</b>新民主主义革命仍属于资产阶级民主革命，承担反帝反封建任务，由无产阶级领导。</p><p><b>社会性质：</b>当时中国仍是半殖民地半封建社会。这与革命性质是不同问题。</p><div class="source">分期框架依据 PDF 第 2 页；样板事件依据第 35—47 页。'+sourceButtons([2,35,46])+'</div>')}
 
@@ -142,15 +270,17 @@ $('filters').addEventListener('click',ev=>{const button=ev.target.closest('[data
 $('search').addEventListener('input',ev=>{closePopover();state.query=ev.target.value;render()});
 $('resetFilters').onclick=()=>{closePopover();state.active=new Set(kinds);state.query='';$('search').value='';state.start=MIN;state.end=MAX;render()};
 $('closeModal').onclick=()=>$('modal').close();$('modal').addEventListener('click',ev=>{if(ev.target===$('modal'))$('modal').close()});$('aboutBtn').onclick=about;
-document.addEventListener('click',ev=>{if(drag)return;const n=ev.target.closest('[data-node]');if(n){const anchor=n.closest('#knowledgePopover')?null:n;selectNode(n.dataset.node,anchor);return}if(ev.target.closest('[data-context]')){showEra();return}const e=ev.target.closest('[data-edge]');if(e){edgeInfo(e.dataset.edge);return}const p=ev.target.closest('[data-page]');if(p)showSource(+p.dataset.page)});
+document.addEventListener('click',ev=>{if(drag)return;const n=ev.target.closest('[data-node]');if(n){const anchor=n.closest('#knowledgePopover')?null:n;selectNode(n.dataset.node,anchor);return}if(ev.target.closest('[data-context]')){showEra();return}const e=ev.target.closest('[data-edge]');if(e){if(isReview()){toggleReviewEdge(e.dataset.edge);return}edgeInfo(e.dataset.edge);return}const p=ev.target.closest('[data-page]');if(p)showSource(+p.dataset.page)});
 document.addEventListener('keydown',ev=>{if(ev.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){ev.preventDefault();$('search').focus()}if((ev.key==='Enter'||ev.key===' ')&&ev.target.matches('g[role="button"]')){ev.preventDefault();ev.target.dispatchEvent(new MouseEvent('click',{bubbles:true}))}});
+document.querySelectorAll('.mode-option').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+$('timelineCanvas').setAttribute('tabindex','-1');
 const track=$('miniTrack'),canvas=$('timelineCanvas');
 canvas.addEventListener('pointerenter',moveTimelineCursor);
 canvas.addEventListener('pointermove',moveTimelineCursor);
 canvas.addEventListener('pointerleave',hideTimelineCursor);
 canvas.addEventListener('pointercancel',hideTimelineCursor);
 window.addEventListener('blur',hideTimelineCursor);
-function beginDrag(ev,mode,scale){if(ev.button!==0)return;ev.preventDefault();closePopover();drag={pointer:ev.pointerId,x:ev.clientX,a:state.start,b:state.end,mode,scale,owner:ev.currentTarget};ev.currentTarget.setPointerCapture(ev.pointerId);canvas.classList.toggle('dragging',mode==='canvas')}
+function beginDrag(ev,mode,scale){if(ev.button!==0)return;ev.preventDefault();if(!(isReview()&&reviewId))closePopover();drag={pointer:ev.pointerId,x:ev.clientX,a:state.start,b:state.end,mode,scale,owner:ev.currentTarget};ev.currentTarget.setPointerCapture(ev.pointerId);canvas.classList.toggle('dragging',mode==='canvas')}
 track.addEventListener('pointerdown',ev=>{const rect=track.getBoundingClientRect();let mode=ev.target.closest('#startHandle')?'start':ev.target.closest('#endHandle')?'end':'pan';if(!ev.target.closest('#rangeWindow')){const center=MIN+(ev.clientX-rect.left)/rect.width*(MAX-MIN),span=state.end-state.start;applyRange(center-span/2,center+span/2)}beginDrag(ev,mode,(MAX-MIN)/rect.width)});
 canvas.addEventListener('pointerdown',ev=>{if(ev.target.closest('[data-node],[data-edge],[data-context]'))return;beginDrag(ev,'canvas',-(state.end-state.start)/(dimensions.W-dimensions.left-dimensions.right))});
 function moveDrag(ev){if(!drag||ev.pointerId!==drag.pointer)return;const delta=(ev.clientX-drag.x)*drag.scale;if(drag.mode==='start')applyRange(Math.max(MIN,Math.min(drag.a+delta,drag.b-MIN_SPAN)),drag.b);else if(drag.mode==='end')applyRange(drag.a,Math.min(MAX,Math.max(drag.b+delta,drag.a+MIN_SPAN)));else applyRange(drag.a+delta,drag.b+delta)}
@@ -158,4 +288,4 @@ function endDrag(ev){if(!drag||ev.pointerId!==drag.pointer)return;const owner=dr
 for(const target of [track,canvas]){target.addEventListener('pointermove',moveDrag);target.addEventListener('pointerup',endDrag);target.addEventListener('pointercancel',endDrag);target.addEventListener('lostpointercapture',()=>{drag=null;canvas.classList.remove('dragging')});target.addEventListener('dblclick',ev=>{if(ev.target.closest('[data-node],[data-edge],[data-context]'))return;applyRange(MIN,MAX)});}
 canvas.addEventListener('wheel',ev=>{ev.preventDefault();const span=state.end-state.start;if(ev.shiftKey||Math.abs(ev.deltaX)>Math.abs(ev.deltaY)){const delta=(ev.deltaX||ev.deltaY)/600*span;applyRange(state.start+delta,state.end+delta);return}const rect=canvas.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(ev.clientX-rect.left-dimensions.left)/(dimensions.W-dimensions.left-dimensions.right))),anchor=state.start+ratio*span,next=Math.max(MIN_SPAN,Math.min(MAX-MIN,span*Math.exp(ev.deltaY*.0015)));applyRange(anchor-ratio*next,anchor+(1-ratio)*next)},{passive:false});
 for(const id of ['startHandle','endHandle','rangeWindow'])$(id).addEventListener('keydown',ev=>{if(ev.target!==ev.currentTarget)return;const delta=ev.key==='ArrowRight'?.25:ev.key==='ArrowLeft'?-.25:0;if(ev.key==='Home'){ev.preventDefault();applyRange(MIN,MAX);return}if(!delta)return;ev.preventDefault();if(id==='startHandle')applyRange(Math.min(state.start+delta,state.end-MIN_SPAN),state.end);else if(id==='endHandle')applyRange(state.start,Math.max(state.end+delta,state.start+MIN_SPAN));else applyRange(state.start+delta,state.end+delta)});
-window.addEventListener('resize',()=>{closePopover();renderTimeline()});render();
+window.addEventListener('resize',()=>{if(!(isReview()&&reviewId))closePopover();renderTimeline();if(isReview()&&reviewId){const el=document.querySelector('#eventPoints [data-node="'+reviewId+'"]');if(el)lastAnchor=el}});setMode('study');render();

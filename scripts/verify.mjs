@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const elements=new Map();
-function el(id){if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',style:{},value:'',clientWidth:1000,clientHeight:700,hidden:id==='knowledgePopover',contains(){return false},getBoundingClientRect(){return {left:220,right:1220,top:0,width:1000}},setAttribute(k,v){this[k]=v},classList:{toggle(){},remove(){}},addEventListener(){},focus(){},showModal(){this.open=true},close(){this.open=false}});return elements.get(id)}
-const sandbox={window:{addEventListener(){}},document:{getElementById:el,querySelector:el,querySelectorAll(){return []},addEventListener(){},activeElement:{tagName:'BODY'}},innerWidth:1400,innerHeight:900,setTimeout,clearTimeout,console};vm.createContext(sandbox);
+function el(id){if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',style:{},value:'',clientWidth:1000,clientHeight:700,hidden:id==='knowledgePopover',contains(){return false},getBoundingClientRect(){return {left:220,right:1220,top:0,width:1000}},querySelectorAll(){return []},setAttribute(k,v){this[k]=v},classList:{toggle(){},remove(){}},addEventListener(){},focus(){},showModal(){this.open=true},close(){this.open=false}});return elements.get(id)}
+const sandbox={window:{addEventListener(){}},document:{getElementById:el,querySelector:el,querySelectorAll(){return []},addEventListener(){},body:{classList:{toggle(){},add(){},remove(){}}},activeElement:{tagName:'BODY'}},innerWidth:1400,innerHeight:900,setTimeout,clearTimeout,console};vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync('dist/data.js','utf8'),sandbox);const data=sandbox.window.HISTORY_DATA;const ids=new Set(data.nodes.map(n=>n.id));assert.equal(ids.size,data.nodes.length);
 for(const n of data.nodes){assert(n.year>=1919&&n.year<1928);for(const p of n.pages)assert(fs.existsSync(`dist/sources/page-${p}.jpg`))}
 for(const e of data.edges){assert(ids.has(e.source)&&ids.has(e.target));assert(fs.existsSync(`dist/sources/page-${e.page}.jpg`))}
@@ -18,6 +18,65 @@ vm.runInContext('applyRange(1927.9,1928)',sandbox);assert.equal(vm.runInContext(
 vm.runInContext('applyRange(1918,1921)',sandbox);assert.equal(vm.runInContext('state.start',sandbox),1919);assert.equal(vm.runInContext('state.end-state.start',sandbox),3);
 vm.runInContext("state.query='不存在的知识点';render()",sandbox);assert.equal(el('empty').hidden,false);
 vm.runInContext("showSource(46)",sandbox);assert(el('modalBody').innerHTML.includes('sources/page-46.jpg'));
+
+// ---- review mode ----
+vm.runInContext("state.query='';state.active=new Set(kinds);applyRange(1919,1928)",sandbox);
+const get=code=>vm.runInContext(code,sandbox);
+get("setMode('review')");
+assert.equal(get('mode'),'review');
+assert.equal(el('relationLines').innerHTML,'','review default must not show all relations');
+assert(el('timelineCanvas').innerHTML.includes('五四运动'),'review map keeps node names');
+assert(get('state.start')===1919&&get('state.end')===1928,'mode switch keeps range');
+get("selectNode('party1')");
+assert.equal(get('reviewId'),'party1');
+assert.equal(el('knowledgePopover').hidden,false);
+const card=el('detail').innerHTML;
+assert(card.includes('中共一大')&&card.includes('会议')&&card.includes('1921'),'card shows title/kind/date');
+assert(card.includes('data-reveal="summary"')&&card.includes('data-reveal="point:0"')&&card.includes('data-reveal="edge:e16"'),'covers rendered');
+assert(card.includes('揭晓：中共一大的第 1 条核心知识'),'cover has accessible name');
+assert(!card.includes('马克思主义在中国的传播')&&!card.includes('上海共产党早期组织'),'answers hidden before reveal');
+assert(!card.includes('出席'),'relation answers hidden before reveal');
+assert(el('relationLines').innerHTML.includes('？'),'relation text masked on map');
+assert(!el('relationLines').innerHTML.includes('data-edge="e16" tabindex="0" role="button" aria-label="毛泽东出席中共一大"'),'edge aria-label must not leak answer');
+// independent reveal
+get("toggleReveal('point:0')");
+assert(get("revealed.has('point:0')")===true);
+assert(get("revealed.has('point:1')")===false,'other covers stay hidden');
+assert(el('detail').innerHTML.includes('data-reveal="point:1"'));
+// relation reveal syncs to map
+assert(!el('relationLines').innerHTML.includes('出席'));
+get("toggleReveal('edge:e16')");
+assert(el('relationLines').innerHTML.includes('出席'),'map shows relation after reveal');
+// recover
+get('recoverAll()');
+assert.equal(get('revealed.size'),0);
+assert(el('relationLines').innerHTML.includes('？')&&!el('relationLines').innerHTML.includes('出席'),'recover re-masks map');
+// reveal all then recover
+get('revealAll()');
+assert(el('relationLines').innerHTML.includes('出席'));
+get('recoverAll()');
+// switching nodes starts covered
+get("selectNode('mao')");
+assert.equal(get('reviewId'),'mao');
+assert(get("revealed.size")===0,'new card starts covered');
+// mode switch back to study restores detail card behaviour
+get("setMode('study')");
+assert.equal(get('mode'),'study');
+assert.equal(get('reviewId'),null);
+get("selectNode('mao')");
+assert(el('detail').innerHTML.includes('核心知识 / KEY POINTS')&&el('detail').innerHTML.includes('PDF'));
+assert(!el('detail').innerHTML.includes('data-reveal'),'study card has no covers');
+get("closePopover()");
+assert.equal(el('relationLines').innerHTML,'');
+// nodes with no review content / no relations must not throw
+get("byId.test={id:'test',title:'测试节点',kind:'事件',year:1920,date:'1920 年',pages:[35],summary:'',points:[],exam:''};setMode('review');selectReview('test')");
+assert.equal(get('reviewId'),'test');
+assert(el('detail').innerHTML.includes('尚未收录直接关系'));
+assert(el('detail').innerHTML.includes('暂无需要遮盖的复习内容'));
+get("selectNode('may4')");
+assert.equal(get('reviewId'),'may4');
+assert(get("revealed.size")===0);
 const html=fs.readFileSync('dist/index.html','utf8');for(const id of ['graphTab','timelineTab','period','startYear','endYear','resultCount','canvasTitle'])assert(!html.includes(`id="${id}"`));
 assert(html.indexOf('id="search"')<html.indexOf('</aside>'));
-console.log('PASS: source integrity, floating cards, inline relations, range boundaries and minimum zoom, filtering, source viewer, removed controls and left search.');
+assert(html.includes('data-mode="study"')&&html.includes('data-mode="review"'));
+console.log('PASS: source integrity, floating cards, inline relations, range boundaries and minimum zoom, filtering, source viewer, removed controls and left search, review mode (mode switch, range kept, hidden relations, per-item reveal, map sync, recover, study unaffected).');

@@ -500,25 +500,19 @@
         </p>
         <div class="group">
           <div class="row">
-            <span class="lbl">开始</span>
-            <input class="field time" id="inStart" type="text" inputmode="numeric" maxlength="5" value="08:30" autocomplete="off">
-            <span class="dash">—</span>
-            <input class="field time" id="inEnd" type="text" inputmode="numeric" maxlength="5" value="17:30" autocomplete="off">
-            <span class="lbl" style="min-width:auto;text-align:right">结束</span>
+            <span class="lbl lg">上午</span>
+            <span class="ro">09:30 — 12:00</span>
           </div>
           <div class="row">
-            <span class="lbl" style="min-width:auto">启用午休（不计薪）</span>
-            <button class="switch" id="swLunch" role="switch" aria-checked="true" aria-label="启用午休"></button>
+            <span class="lbl lg">午休</span>
+            <span class="ro">12:00 — 13:30</span>
           </div>
           <div class="row">
-            <span class="lbl">午休</span>
-            <input class="field time" id="inLunchStart" type="text" inputmode="numeric" maxlength="5" value="11:30" autocomplete="off">
-            <span class="dash">—</span>
-            <input class="field time" id="inLunchEnd" type="text" inputmode="numeric" maxlength="5" value="14:00" autocomplete="off">
-            <span class="lbl" style="min-width:auto;text-align:right">回来</span>
+            <span class="lbl lg">下午</span>
+            <span class="ro">13:30 — 18:30</span>
           </div>
         </div>
-        <p class="hint" id="effHint">有效工作时间：6 小时 30 分钟</p>
+        <p class="hint" id="effHint">有效工作时间：7 小时 30 分钟</p>
       </div>
 
       <div class="sec">
@@ -584,6 +578,9 @@
   var HIRE = new Date(2026, 6, 13);                     // 入职日 2026-07-13（周一）
   var HIRE_Y = 2026, HIRE_M = 7;
 
+  /* 工作时间（写死）：上午 09:30–12:00，午休 12:00–13:30，下午 13:30–18:30 */
+  var WORK = { start:"09:30", lunchStart:"12:00", lunchEnd:"13:30", end:"18:30" };
+
   /* =========================================================
    * 2026 年法定节假日与调休上班日
    * 来源：国办发明电〔2025〕7 号《国务院办公厅关于 2026 年部分节假日安排的通知》
@@ -612,8 +609,6 @@
   ];
 
   var DEFAULTS = {
-    start:"08:30", end:"17:30",
-    lunchOn:true, lunchStart:"11:30", lunchEnd:"14:00",
     theme:4, floatBall:true
   };
 
@@ -713,25 +708,20 @@
     return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0);
   }
   function effMinutes(){
-    var total = toMin(state.end) - toMin(state.start);
-    if(state.lunchOn){
-      var ls = toMin(state.lunchStart), le = toMin(state.lunchEnd);
-      total -= Math.max(0, Math.min(le, toMin(state.end)) - Math.max(ls, toMin(state.start)));
-    }
-    return Math.max(0, total);
+    var am = toMin(WORK.lunchStart) - toMin(WORK.start);   // 上午 09:30–12:00
+    var pm = toMin(WORK.end) - toMin(WORK.lunchEnd);       // 下午 13:30–18:30
+    return Math.max(0, am) + Math.max(0, pm);
   }
   function nowMinutes(d){
     return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
   }
   function workedMinutes(d){
     if(!isWorkday(d) || d < midnight(HIRE)) return 0;
-    var nowM = nowMinutes(d), st = toMin(state.start), en = toMin(state.end);
-    if(nowM <= st) return 0;
-    var w = Math.min(nowM, en) - st;
-    if(state.lunchOn){
-      var ls = toMin(state.lunchStart), le = toMin(state.lunchEnd);
-      w -= Math.max(0, Math.min(nowM, le) - Math.max(st, ls));
-    }
+    var nowM = nowMinutes(d), w = 0;
+    var st = toMin(WORK.start), ls = toMin(WORK.lunchStart);
+    var le = toMin(WORK.lunchEnd), en = toMin(WORK.end);
+    if(nowM > st) w += Math.min(nowM, ls) - st;
+    if(nowM > le) w += Math.min(nowM, en) - le;
     return Math.max(0, Math.min(w, effMinutes()));
   }
 
@@ -973,54 +963,12 @@
   $("btnSettings2").addEventListener("click", openSettings);
   $("btnDone").addEventListener("click", closeSettings);
 
-  var inStart = $("inStart"), inEnd = $("inEnd");
-  var inLS = $("inLunchStart"), inLE = $("inLunchEnd");
-
   function syncInputs(){
-    inStart.value = state.start;
-    inEnd.value = state.end;
-    inLS.value = state.lunchStart;
-    inLE.value = state.lunchEnd;
-    $("swLunch").setAttribute("aria-checked", state.lunchOn ? "true" : "false");
     $("swFloat").setAttribute("aria-checked", state.floatBall ? "true" : "false");
-    inLS.disabled = inLE.disabled = !state.lunchOn;
-    inLS.style.opacity = inLE.style.opacity = state.lunchOn ? "1" : ".45";
     $("floater").hidden = !state.floatBall;
     markSwatches();
   }
 
-  function normalizeTime(v){
-    var t = String(v == null ? "" : v).trim().replace(/[^0-9]/g, "");
-    if(!t) return null;
-    var h, m;
-    if(t.length <= 2){ h = parseInt(t, 10); m = 0; }
-    else if(t.length === 3){ h = parseInt(t.charAt(0), 10); m = parseInt(t.slice(1), 10); }
-    else { h = parseInt(t.slice(0, t.length - 2), 10); m = parseInt(t.slice(-2), 10); }
-    if(isNaN(h) || isNaN(m) || h > 23 || m > 59) return null;
-    return pad2(h) + ":" + pad2(m);
-  }
-
-  function commit(){
-    [["start", inStart], ["end", inEnd], ["lunchStart", inLS], ["lunchEnd", inLE]].forEach(function(pair){
-      var v = normalizeTime(pair[1].value);
-      if(v) state[pair[0]] = v;
-      pair[1].value = state[pair[0]];
-    });
-    save();
-    render();
-  }
-  [inStart, inEnd, inLS, inLE].forEach(function(el){
-    el.addEventListener("change", commit);
-    el.addEventListener("blur", commit);
-  });
-
-  $("swLunch").addEventListener("click", function(){
-    state.lunchOn = !state.lunchOn;
-    $("swLunch").setAttribute("aria-checked", state.lunchOn ? "true" : "false");
-    inLS.disabled = inLE.disabled = !state.lunchOn;
-    inLS.style.opacity = inLE.style.opacity = state.lunchOn ? "1" : ".45";
-    save(); render();
-  });
   $("swFloat").addEventListener("click", function(){
     state.floatBall = !state.floatBall;
     $("swFloat").setAttribute("aria-checked", state.floatBall ? "true" : "false");
@@ -1031,7 +979,7 @@
     state = {};
     for(var k in DEFAULTS) state[k] = DEFAULTS[k];
     save(); applyTheme(); syncInputs(); render();
-    toast("已恢复默认工作时间与主题");
+    toast("已恢复默认主题与悬浮球设置");
   });
 
   /* =========================================================
